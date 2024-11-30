@@ -138,6 +138,33 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Xatolik: {str(e)}"
         )
 
+async def handle_invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Noto'g'ri turdagi xabarlarni qayta ishlash"""
+    message_type = "nomalum"
+    if update.message.photo:
+        message_type = "rasm"
+    elif update.message.video:
+        message_type = "video"
+    elif update.message.audio:
+        message_type = "audio"
+    elif update.message.voice:
+        message_type = "ovozli xabar"
+    elif update.message.document:
+        message_type = "fayl"
+    elif update.message.sticker:
+        message_type = "sticker"
+    elif update.message.animation:
+        message_type = "GIF"
+    elif update.message.video_note:
+        message_type = "video xabar"
+    
+    await update.message.reply_text(
+        f"❌ Kechirasiz, men {message_type} bilan ishlay olmayman.\n\n"
+        "📝 Iltimos, menga matn yuboring - men uni ovozli xabar qilib qaytaraman.\n"
+        "🎙 Ovozni o'zgartirish uchun /voice buyrug'ini yuboring.\n"
+        "❓ Yordam olish uchun /help buyrug'ini yuboring."
+    )
+
 def run_flask():
     """Flask serverni ishga tushirish"""
     port = int(os.getenv("PORT", os.getenv("KOYEB_PORT", 8000)))
@@ -162,6 +189,19 @@ def run():
     application.add_handler(CommandHandler("voice", voice_command))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
+    
+    # Noto'g'ri turdagi xabarlarni qayta ishlash
+    application.add_handler(MessageHandler(
+        filters.PHOTO | 
+        filters.VIDEO | 
+        filters.AUDIO | 
+        filters.VOICE | 
+        filters.DOCUMENT | 
+        filters.STICKER | 
+        filters.ANIMATION | 
+        filters.VIDEO_NOTE, 
+        handle_invalid_message
+    ))
 
     # Botni ishga tushirish
     logger.info("Bot ishga tushirilmoqda...")
