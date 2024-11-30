@@ -187,14 +187,14 @@ async def run_bot():
         
         # Noto'g'ri turdagi xabarlarni qayta ishlash
         application.add_handler(MessageHandler(
-            filters.PHOTO | 
+            (filters.PHOTO | 
             filters.VIDEO | 
             filters.AUDIO | 
             filters.VOICE | 
-            filters.DOCUMENT | 
-            filters.STICKER | 
+            filters.Document.ALL | 
+            filters.Sticker.ALL | 
             filters.ANIMATION | 
-            filters.VIDEO_NOTE, 
+            filters.VIDEO_NOTE), 
             handle_invalid_message
         ))
 
