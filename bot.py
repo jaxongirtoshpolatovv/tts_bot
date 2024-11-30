@@ -36,6 +36,9 @@ VOICES = {
 # Default ovoz
 current_voice = "uz-UZ-SardorNeural"
 
+# Global application
+application = None
+
 async def generate_audio(text, voice, output_path):
     """Matnni ovozga o'girish"""
     communicate = edge_tts.Communicate(text, voice)
@@ -109,47 +112,30 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def run_flask():
     """Flask serverni ishga tushirish"""
-    # Koyeb PORT environment variableni olish
     port = int(os.getenv("PORT", os.getenv("KOYEB_PORT", 8000)))
     serve(app, host='0.0.0.0', port=port)
     logger.info(f"Flask server {port}-portda ishga tushdi")
 
-async def run_bot():
-    """Botni ishga tushirish"""
-    try:
-        # Bot applicationini yaratish
-        application = Application.builder().token(TOKEN).build()
-
-        # Handlerlarni qo'shish
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.Regex(f"^({'|'.join(VOICES.keys())})$"), change_voice))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
-
-        # Botni ishga tushirish
-        logger.info("Bot ishga tushirilmoqda...")
-        await application.initialize()
-        await application.start()
-        await application.run_polling(allowed_updates=Update.ALL_TYPES)
-    except Exception as e:
-        logger.error(f"Bot ishga tushishda xatolik: {e}")
-        raise e
-
-async def main():
+def run():
     """Asosiy funksiya"""
-    try:
-        # Flask serverni alohida thread da ishga tushirish
-        flask_thread = threading.Thread(target=run_flask)
-        flask_thread.daemon = True
-        flask_thread.start()
-        
-        # Botni ishga tushirish
-        await run_bot()
-    except Exception as e:
-        logger.error(f"Asosiy funksiyada xatolik: {e}")
-        raise e
+    global application
+    
+    # Flask serverni alohida thread da ishga tushirish
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Bot applicationini yaratish
+    application = Application.builder().token(TOKEN).build()
+
+    # Handlerlarni qo'shish
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.Regex(f"^({'|'.join(VOICES.keys())})$"), change_voice))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
+
+    # Botni ishga tushirish
+    logger.info("Bot ishga tushirilmoqda...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Bot to'xtatildi")
+    run()
