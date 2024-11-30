@@ -106,7 +106,7 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Xatolik: {str(e)}"
         )
 
-def run_bot():
+async def run_bot():
     """Botni ishga tushirish"""
     # Bot applicationini yaratish
     application = Application.builder().token(TOKEN).build()
@@ -118,13 +118,23 @@ def run_bot():
 
     # Botni ishga tushirish
     logger.info("Bot ishga tushirilmoqda...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    await application.initialize()
+    await application.start()
+    await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
-if __name__ == '__main__':
-    # Bot threadini ishga tushirish
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.start()
-    
-    # Flask serverni ishga tushirish
+def run_flask():
+    """Flask serverni ishga tushirish"""
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
+def main():
+    """Asosiy funksiya"""
+    # Flask serverni alohida thread da ishga tushirish
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+    
+    # Botni asosiy thread da ishga tushirish
+    asyncio.run(run_bot())
+
+if __name__ == '__main__':
+    main()
