@@ -36,9 +36,6 @@ VOICES = {
 # Default ovoz
 current_voice = "uz-UZ-SardorNeural"
 
-# Global application
-application = None
-
 async def generate_audio(text, voice, output_path):
     """Matnni ovozga o'girish"""
     communicate = edge_tts.Communicate(text, voice)
@@ -171,15 +168,8 @@ def run_flask():
     serve(app, host='0.0.0.0', port=port)
     logger.info(f"Flask server {port}-portda ishga tushdi")
 
-def run():
-    """Asosiy funksiya"""
-    global application
-    
-    # Flask serverni alohida thread da ishga tushirish
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
+async def run_bot():
+    """Botni ishga tushirish"""
     # Bot applicationini yaratish
     application = Application.builder().token(TOKEN).build()
 
@@ -205,7 +195,19 @@ def run():
 
     # Botni ishga tushirish
     logger.info("Bot ishga tushirilmoqda...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    await application.initialize()
+    await application.start()
+    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+def main():
+    """Asosiy funksiya"""
+    # Flask serverni alohida thread da ishga tushirish
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Botni ishga tushirish
+    asyncio.run(run_bot())
 
 if __name__ == '__main__':
-    run()
+    main()
