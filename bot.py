@@ -7,6 +7,7 @@ import os
 import tempfile
 from flask import Flask
 import threading
+import signal
 
 # Flask app
 app = Flask(__name__)
@@ -14,6 +15,10 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return 'Bot ishlayapti!'
+
+@app.route('/health')
+def health():
+    return 'OK', 200
 
 # Logging sozlamalari
 logging.basicConfig(
@@ -24,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Bot tokeni
-TOKEN = "7741311977:AAGoqlp5jtfX7zOKeviDVafUWQO89RybAd4"
+TOKEN = os.getenv("TOKEN", "7741311977:AAGoqlp5jtfX7zOKeviDVafUWQO89RybAd4")
 
 # Ovozlar
 VOICES = {
@@ -34,6 +39,9 @@ VOICES = {
 
 # Default ovoz
 current_voice = "uz-UZ-SardorNeural"
+
+# Global application instance
+application = None
 
 async def generate_audio(text, voice, output_path):
     """Matnni ovozga o'girish"""
@@ -106,8 +114,10 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Xatolik: {str(e)}"
         )
 
-async def run_bot():
-    """Botni ishga tushirish"""
+async def setup_bot():
+    """Bot applicationini sozlash"""
+    global application
+    
     # Bot applicationini yaratish
     application = Application.builder().token(TOKEN).build()
 
@@ -120,21 +130,39 @@ async def run_bot():
     logger.info("Bot ishga tushirilmoqda...")
     await application.initialize()
     await application.start()
-    await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    
+    try:
+        await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    except Exception as e:
+        logger.error(f"Polling error: {e}")
+    finally:
+        if application:
+            await application.stop()
 
 def run_flask():
     """Flask serverni ishga tushirish"""
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port, debug=False)
+
+def signal_handler(signum, frame):
+    """Signal handler for graceful shutdown"""
+    logger.info("Shutting down...")
+    if application:
+        asyncio.create_task(application.stop())
 
 def main():
     """Asosiy funksiya"""
+    # Signal handlerlarni o'rnatish
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     # Flask serverni alohida thread da ishga tushirish
     flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
     flask_thread.start()
     
     # Botni asosiy thread da ishga tushirish
-    asyncio.run(run_bot())
+    asyncio.run(setup_bot())
 
 if __name__ == '__main__':
     main()
