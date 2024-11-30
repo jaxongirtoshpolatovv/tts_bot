@@ -186,17 +186,17 @@ async def run_bot():
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
         
         # Noto'g'ri turdagi xabarlarni qayta ishlash
-        application.add_handler(MessageHandler(
-            (filters.PHOTO | 
-            filters.VIDEO | 
-            filters.AUDIO | 
-            filters.VOICE | 
-            filters.Document.ALL | 
-            filters.Sticker.ALL | 
-            filters.ANIMATION | 
-            filters.VIDEO_NOTE), 
-            handle_invalid_message
-        ))
+        non_text_filter = (
+            filters.PHOTO |
+            filters.VIDEO |
+            filters.AUDIO |
+            filters.VOICE |
+            filters.ATTACHMENT |  # Document o'rniga
+            filters.Sticker.ALL |
+            filters.ANIMATION |
+            filters.VIDEO_NOTE
+        )
+        application.add_handler(MessageHandler(non_text_filter, handle_invalid_message))
 
         # Botni ishga tushirish
         logger.info("Bot ishga tushirilmoqda...")
