@@ -8,6 +8,10 @@ import tempfile
 from flask import Flask
 import threading
 from waitress import serve
+import nest_asyncio
+
+# Event loop muammosini hal qilish
+nest_asyncio.apply()
 
 # Flask app
 app = Flask(__name__)
@@ -170,34 +174,38 @@ def run_flask():
 
 async def run_bot():
     """Botni ishga tushirish"""
-    # Bot applicationini yaratish
-    application = Application.builder().token(TOKEN).build()
+    try:
+        # Bot applicationini yaratish
+        application = Application.builder().token(TOKEN).build()
 
-    # Handlerlarni qo'shish
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("voice", voice_command))
-    application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
-    
-    # Noto'g'ri turdagi xabarlarni qayta ishlash
-    application.add_handler(MessageHandler(
-        filters.PHOTO | 
-        filters.VIDEO | 
-        filters.AUDIO | 
-        filters.VOICE | 
-        filters.DOCUMENT | 
-        filters.STICKER | 
-        filters.ANIMATION | 
-        filters.VIDEO_NOTE, 
-        handle_invalid_message
-    ))
+        # Handlerlarni qo'shish
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("voice", voice_command))
+        application.add_handler(CallbackQueryHandler(button_callback))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
+        
+        # Noto'g'ri turdagi xabarlarni qayta ishlash
+        application.add_handler(MessageHandler(
+            filters.PHOTO | 
+            filters.VIDEO | 
+            filters.AUDIO | 
+            filters.VOICE | 
+            filters.DOCUMENT | 
+            filters.STICKER | 
+            filters.ANIMATION | 
+            filters.VIDEO_NOTE, 
+            handle_invalid_message
+        ))
 
-    # Botni ishga tushirish
-    logger.info("Bot ishga tushirilmoqda...")
-    await application.initialize()
-    await application.start()
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Botni ishga tushirish
+        logger.info("Bot ishga tushirilmoqda...")
+        await application.initialize()
+        await application.start()
+        await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Exception as e:
+        logger.error(f"Bot ishga tushishda xatolik: {e}")
+        raise e
 
 def main():
     """Asosiy funksiya"""
