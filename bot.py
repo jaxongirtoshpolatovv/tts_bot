@@ -1,6 +1,6 @@
 import logging
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import edge_tts
 import asyncio
 import os
@@ -44,28 +44,56 @@ async def generate_audio(text, voice, output_path):
     communicate = edge_tts.Communicate(text, voice)
     await communicate.save(output_path)
 
+def get_voice_keyboard():
+    """Ovoz tanlash uchun keyboard yaratish"""
+    keyboard = []
+    for voice_name in VOICES.keys():
+        keyboard.append([InlineKeyboardButton(voice_name, callback_data=voice_name)])
+    return InlineKeyboardMarkup(keyboard)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bot ishga tushganda salomlashish"""
-    keyboard = [[button] for button in VOICES.keys()]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    
     await update.message.reply_text(
-        "Assalomu alaykum! Men matnni ovozli xabarga aylantirib beruvchi botman.\n\n"
-        "Ovozni tanlang va menga istalgan matningizni yuboring, "
-        "men uni ovozli xabar qilib qaytaraman.",
-        reply_markup=reply_markup
+        "👋 Assalomu alaykum! Men matnni ovozli xabarga aylantirib beruvchi botman.\n\n"
+        "📝 Menga istalgan matningizni yuboring, men uni ovozli xabar qilib qaytaraman.\n\n"
+        "🎙 Ovozni o'zgartirish uchun /voice buyrug'ini yuboring.\n"
+        "❓ Yordam olish uchun /help buyrug'ini yuboring.",
     )
 
-async def change_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ovozni o'zgartirish"""
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Yordam xabarini yuborish"""
+    help_text = (
+        "🤖 *Bot buyruqlari:*\n\n"
+        "/start - Botni ishga tushirish\n"
+        "/help - Yordam xabarini ko'rsatish\n"
+        "/voice - Ovozni o'zgartirish\n\n"
+        "💡 *Qo'shimcha ma'lumotlar:*\n"
+        "1. Menga istalgan matningizni yuboring\n"
+        "2. Men uni tanlangan ovozda o'qib beraman\n"
+        "3. Hozirgi ovoz: " + [k for k, v in VOICES.items() if v == current_voice][0]
+    )
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
+async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ovoz tanlash"""
+    keyboard = get_voice_keyboard()
+    await update.message.reply_text(
+        "🎙 Ovozni tanlang:",
+        reply_markup=keyboard
+    )
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inline button bosilganda"""
     global current_voice
-    selected = update.message.text
+    query = update.callback_query
+    selected = query.data
     
     if selected in VOICES:
         current_voice = VOICES[selected]
-        await update.message.reply_text(f"Ovoz {selected} ga o'zgartirildi. Endi menga matn yuboring.")
-    else:
-        await text_to_speech(update, context)
+        await query.answer(f"Ovoz {selected} ga o'zgartirildi")
+        await query.edit_message_text(
+            f"✅ Ovoz {selected} ga o'zgartirildi.\n\nEndi menga matn yuboring."
+        )
 
 async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Matnni ovozga o'girish"""
@@ -77,7 +105,7 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Yangi xabar qabul qilindi: {text[:50]}...")
         
         # Foydalanuvchiga jarayon boshlanganini bildirish
-        status_message = await update.message.reply_text("Audio tayyorlanmoqda...")
+        status_message = await update.message.reply_text("🎵 Audio tayyorlanmoqda...")
         
         # Vaqtinchalik fayl yaratish
         with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
@@ -106,7 +134,7 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
         error_message = f"Xatolik yuz berdi: {str(e)}"
         logger.error(error_message)
         await update.message.reply_text(
-            "Kechirasiz, xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.\n"
+            "❌ Kechirasiz, xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.\n"
             f"Xatolik: {str(e)}"
         )
 
@@ -130,7 +158,9 @@ def run():
 
     # Handlerlarni qo'shish
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.Regex(f"^({'|'.join(VOICES.keys())})$"), change_voice))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("voice", voice_command))
+    application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
 
     # Botni ishga tushirish
