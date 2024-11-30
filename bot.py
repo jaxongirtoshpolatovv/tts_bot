@@ -7,7 +7,7 @@ import os
 import tempfile
 from flask import Flask
 import threading
-import signal
+from waitress import serve
 
 # Flask app
 app = Flask(__name__)
@@ -15,10 +15,6 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return 'Bot ishlayapti!'
-
-@app.route('/health')
-def health():
-    return 'OK', 200
 
 # Logging sozlamalari
 logging.basicConfig(
@@ -39,9 +35,6 @@ VOICES = {
 
 # Default ovoz
 current_voice = "uz-UZ-SardorNeural"
-
-# Global application instance
-application = None
 
 async def generate_audio(text, voice, output_path):
     """Matnni ovozga o'girish"""
@@ -114,55 +107,49 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Xatolik: {str(e)}"
         )
 
-async def setup_bot():
-    """Bot applicationini sozlash"""
-    global application
-    
-    # Bot applicationini yaratish
-    application = Application.builder().token(TOKEN).build()
-
-    # Handlerlarni qo'shish
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.Regex(f"^({'|'.join(VOICES.keys())})$"), change_voice))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
-
-    # Botni ishga tushirish
-    logger.info("Bot ishga tushirilmoqda...")
-    await application.initialize()
-    await application.start()
-    
-    try:
-        await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
-    except Exception as e:
-        logger.error(f"Polling error: {e}")
-    finally:
-        if application:
-            await application.stop()
-
 def run_flask():
     """Flask serverni ishga tushirish"""
-    port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    # Koyeb PORT environment variableni olish
+    port = int(os.getenv("PORT", os.getenv("KOYEB_PORT", 8000)))
+    serve(app, host='0.0.0.0', port=port)
+    logger.info(f"Flask server {port}-portda ishga tushdi")
 
-def signal_handler(signum, frame):
-    """Signal handler for graceful shutdown"""
-    logger.info("Shutting down...")
-    if application:
-        asyncio.create_task(application.stop())
+async def run_bot():
+    """Botni ishga tushirish"""
+    try:
+        # Bot applicationini yaratish
+        application = Application.builder().token(TOKEN).build()
 
-def main():
+        # Handlerlarni qo'shish
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(MessageHandler(filters.Regex(f"^({'|'.join(VOICES.keys())})$"), change_voice))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
+
+        # Botni ishga tushirish
+        logger.info("Bot ishga tushirilmoqda...")
+        await application.initialize()
+        await application.start()
+        await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Exception as e:
+        logger.error(f"Bot ishga tushishda xatolik: {e}")
+        raise e
+
+async def main():
     """Asosiy funksiya"""
-    # Signal handlerlarni o'rnatish
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
-    # Flask serverni alohida thread da ishga tushirish
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    # Botni asosiy thread da ishga tushirish
-    asyncio.run(setup_bot())
+    try:
+        # Flask serverni alohida thread da ishga tushirish
+        flask_thread = threading.Thread(target=run_flask)
+        flask_thread.daemon = True
+        flask_thread.start()
+        
+        # Botni ishga tushirish
+        await run_bot()
+    except Exception as e:
+        logger.error(f"Asosiy funksiyada xatolik: {e}")
+        raise e
 
 if __name__ == '__main__':
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot to'xtatildi")
