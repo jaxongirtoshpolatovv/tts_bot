@@ -1,0 +1,4 @@
+python-telegram-bot==20.6
+edge-tts==6.1.9
+Flask==3.0.0
+Flask
