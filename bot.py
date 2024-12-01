@@ -200,7 +200,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except:
         pass
 
-def main():
+async def main():
     """Main function"""
     # Configure logging
     logging.basicConfig(
@@ -245,7 +245,9 @@ def main():
 
     # Start bot
     print("Bot ishga tushirilmoqda...")
-    application.run_polling(
+    await application.initialize()
+    await application.start()
+    await application.run_polling(
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True,
         pool_timeout=None
@@ -253,4 +255,4 @@ def main():
     print("Bot to'xtatildi")
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
