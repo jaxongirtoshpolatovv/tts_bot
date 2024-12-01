@@ -1,88 +1,73 @@
 import logging
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import edge_tts
 import asyncio
 import os
 import tempfile
-from flask import Flask
-import threading
-from waitress import serve
-import multiprocessing
-import nest_asyncio
 from dotenv import load_dotenv
-import botanalytics
+import nest_asyncio
 
-# .env faylidan o'zgaruvchilarni yuklash
+# Enable nested event loops
+nest_asyncio.apply()
+
+# Load environment variables
 load_dotenv()
 
-# BotAnalytics API kalitini sozlash
-botanalytics.api_key = os.getenv('BOTANALYTICS_API_KEY')
+# Get bot token from environment variables
+TOKEN = os.getenv('BOT_TOKEN')
+if not TOKEN:
+    raise ValueError("BOT_TOKEN not found in environment variables")
 
-# Flask app
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return 'Bot ishlayapti!'
-
-# Logging sozlamalari
+# Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-logger = logging.getLogger(__name__)
-
-# Bot tokeni
-TOKEN = os.getenv("TOKEN", "7741311977:AAGoqlp5jtfX7zOKeviDVafUWQO89RybAd4")
-
-# Ovozlar
+# Voices
 VOICES = {
     "🚹 Erkak ovozi": "uz-UZ-SardorNeural",
     "👩 Ayol ovozi": "uz-UZ-MadinaNeural"
 }
 
-# Default ovoz
+# Default voice
 current_voice = "uz-UZ-SardorNeural"
 
-async def generate_audio(text, voice, output_path):
-    """Matnni ovozga o'girish"""
-    communicate = edge_tts.Communicate(text, voice)
-    await communicate.save(output_path)
-
 def get_voice_keyboard():
-    """Ovoz tanlash uchun keyboard yaratish"""
+    """Create voice selection keyboard"""
     keyboard = []
     for voice_name in VOICES.keys():
         keyboard.append([InlineKeyboardButton(voice_name, callback_data=voice_name)])
     return InlineKeyboardMarkup(keyboard)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Bot ishga tushganda salomlashish"""
+    """Start command handler"""
     await update.message.reply_text(
         "👋 Assalomu alaykum! Men matnni ovozli xabarga aylantirib beruvchi botman.\n\n"
         "📝 Menga istalgan matningizni yuboring, men uni ovozli xabar qilib qaytaraman.\n\n"
         "🎙 Ovozni o'zgartirish uchun /voice buyrug'ini yuboring.\n"
-        "❓ Yordam olish uchun /help buyrug'ini yuboring.",
+        "❓ Yordam olish uchun /help buyrug'ini yuboring."
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Yordam xabarini yuborish"""
+    """Help command handler"""
+    current_voice_name = [k for k, v in VOICES.items() if v == current_voice][0]
     help_text = (
         "🤖 *Bot buyruqlari:*\n\n"
         "/start - Botni ishga tushirish\n"
         "/help - Yordam xabarini ko'rsatish\n"
         "/voice - Ovozni o'zgartirish\n\n"
-        "💡 *Qo'shimcha ma'lumotlar:*\n"
+        "💡 *Qo'shimcha ma'lumotlar:*\n\n"
         "1. Menga istalgan matningizni yuboring\n"
-        "2. Men uni tanlangan ovozda o'qib beraman\n"
-        "3. Hozirgi ovoz: " + [k for k, v in VOICES.items() if v == current_voice][0]
+        "2. Men uni ovozli xabar qilib qaytaraman\n"
+        "3. Audio fayl nomi yuborilgan matningizning birinchi 2 ta so'zidan hosil qilinadi\n"
+        f"4. Hozirgi tanlangan ovoz: {current_voice_name}"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ovoz tanlash"""
+    """Voice selection command handler"""
     keyboard = get_voice_keyboard()
     await update.message.reply_text(
         "🎙 Ovozni tanlang:",
@@ -90,7 +75,7 @@ async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Inline button bosilganda"""
+    """Handle button callbacks"""
     global current_voice
     query = update.callback_query
     selected = query.data
@@ -103,50 +88,82 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Matnni ovozga o'girish"""
+    """Text to speech handler"""
+    status_message = None
+    audio_path = None
+    
     try:
-        # Foydalanuvchi yuborgan xabarni olish
         text = update.message.text
-        chat_id = update.message.chat_id
+        if not text:
+            await update.message.reply_text("❌ Matn bo'sh bo'lishi mumkin emas!")
+            return
         
-        logger.info(f"Yangi xabar qabul qilindi: {text[:50]}...")
-        
-        # Foydalanuvchiga jarayon boshlanganini bildirish
-        status_message = await update.message.reply_text("🎵 Audio tayyorlanmoqda...")
-        
-        # Vaqtinchalik fayl yaratish
-        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
-            audio_path = temp_file.name
+        if len(text) > 1000:
+            await update.message.reply_text("❌ Matn juda uzun! 1000 ta belgidan kam bo'lishi kerak.")
+            return
             
-            # Matnni ovozga o'girish
-            await generate_audio(text, current_voice, audio_path)
+        # Get first two words for audio title
+        words = text.split()
+        title = "_".join(words[:2]) if len(words) > 1 else words[0]
+        title = f"audio_{title}"
+        
+        # Send status message
+        status_message = await update.message.reply_text(
+            "🎵 Audio tayyorlanmoqda...\n"
+            "⏳ Biroz kuting..."
+        )
+        
+        try:
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+                audio_path = temp_file.name
             
-            # Ovozli xabarni yuborish
+            # Generate audio
+            communicate = edge_tts.Communicate(text, current_voice)
+            await communicate.save(audio_path)
+            
+            # Check if file exists and has content
+            if not os.path.exists(audio_path):
+                raise Exception("Audio fayl yaratilmadi!")
+            
+            if os.path.getsize(audio_path) == 0:
+                raise Exception("Audio fayl bo'sh yaratildi!")
+                
+            # Send audio with custom title
             with open(audio_path, 'rb') as audio:
                 await update.message.reply_audio(
                     audio=audio,
-                    title="Text to Speech Audio",
-                    performer="TTS Bot"
+                    title=title,
+                    performer="TTS Bot",
+                    caption="✅ Audio xabar tayyor!"
                 )
-                logger.info("Audio xabar yuborildi")
+        finally:
+            # Clean up temp file
+            if audio_path and os.path.exists(audio_path):
+                try:
+                    os.unlink(audio_path)
+                except Exception as e:
+                    logging.error(f"Failed to delete temp file: {e}")
             
-            # Status xabarni o'chirish
+        # Delete status message
+        if status_message:
             await status_message.delete()
             
-            # Vaqtinchalik faylni o'chirish
-            os.unlink(audio_path)
-            logger.info("Vaqtinchalik fayl o'chirildi")
-        
     except Exception as e:
-        error_message = f"Xatolik yuz berdi: {str(e)}"
-        logger.error(error_message)
-        await update.message.reply_text(
-            "❌ Kechirasiz, xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.\n"
-            f"Xatolik: {str(e)}"
-        )
+        error_text = f"❌ Xatolik yuz berdi: {str(e)}"
+        if status_message:
+            try:
+                await status_message.edit_text(error_text)
+            except:
+                await update.message.reply_text(error_text)
+        else:
+            await update.message.reply_text(error_text)
+        
+        # Log the error
+        logging.error(f"Error in text_to_speech: {str(e)}")
 
 async def handle_invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Noto'g'ri turdagi xabarlarni qayta ishlash"""
+    """Handle non-text messages"""
     message_type = "nomalum"
     if update.message.photo:
         message_type = "rasm"
@@ -167,91 +184,42 @@ async def handle_invalid_message(update: Update, context: ContextTypes.DEFAULT_T
     
     await update.message.reply_text(
         f"❌ Kechirasiz, men {message_type} bilan ishlay olmayman.\n\n"
-        "📝 Iltimos, menga matn yuboring - men uni ovozli xabar qilib qaytaraman.\n"
+        "📝 Iltimos, menga faqat matn yuboring - men uni ovozli xabar qilib qaytaraman.\n"
         "🎙 Ovozni o'zgartirish uchun /voice buyrug'ini yuboring.\n"
         "❓ Yordam olish uchun /help buyrug'ini yuboring."
     )
 
-def log_user_activity(update: Update):
-    user = update.effective_user
-    logger.info(f"Foydalanuvchi: {user.id}, Ismi: {user.first_name}, Username: {user.username}")
-
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    log_user_activity(update)
-    botanalytics.track(update)  # Foydalanuvchi xatti-harakatlarini kuzatish
-    await text_to_speech(update, context)
-
-def run_flask():
-    """Flask serverni ishga tushirish"""
-    try:
-        # Portni olish
-        port = int(os.getenv("PORT", os.getenv("KOYEB_PORT", 8080)))  # 8000 o'rniga 8080 portini ishlatamiz
-        logger.info(f"Flask server {port}-portda ishga tushirilmoqda...")
-        
-        # Serverni ishga tushirish
-        serve(app, host='0.0.0.0', port=port)
-    except Exception as e:
-        logger.error(f"Flask server ishga tushishda xatolik: {e}")
-        raise e
-
-async def run_bot():
-    """Botni ishga tushirish"""
-    try:
-        # Bot applicationini yaratish
-        application = Application.builder().token(TOKEN).build()
-
-        # Handlerlarni qo'shish
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("voice", voice_command))
-        application.add_handler(CallbackQueryHandler(button_callback))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-        
-        # Noto'g'ri turdagi xabarlarni qayta ishlash
-        non_text_filter = (
-            filters.PHOTO |
-            filters.VIDEO |
-            filters.AUDIO |
-            filters.VOICE |
-            filters.ATTACHMENT |
-            filters.Sticker.ALL |
-            filters.ANIMATION |
-            filters.VIDEO_NOTE
-        )
-        application.add_handler(MessageHandler(non_text_filter, handle_invalid_message))
-
-        # Botni ishga tushirish
-        logger.info("Bot ishga tushirilmoqda...")
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling(drop_pending_updates=True)
-        
-        try:
-            await application.updater.stop()
-        finally:
-            await application.stop()
-            
-    except Exception as e:
-        logger.error(f"Bot ishga tushishda xatolik: {e}")
-        raise e
-
 def main():
-    """Asosiy funksiya"""
-    # Flask serverni alohida jarayonda ishga tushirish
-    flask_process = multiprocessing.Process(target=run_flask)
-    flask_process.start()
+    """Main function"""
+    # Create application
+    application = Application.builder().token(TOKEN).build()
+
+    # Add handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("voice", voice_command))
+    application.add_handler(CallbackQueryHandler(button_callback))
     
-    try:
-        # Event loopni olish
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Botni ishga tushirish
-        loop.run_until_complete(run_bot())
-    except KeyboardInterrupt:
-        pass
-    finally:
-        loop.close()
+    # Handle text messages
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
+    
+    # Handle non-text messages
+    non_text_filter = (
+        filters.PHOTO |  # For photos
+        filters.VIDEO |  # For videos
+        filters.AUDIO |  # For audio files
+        filters.VOICE |  # For voice messages
+        filters.Document.ALL |  # For documents/files
+        filters.Sticker.ALL |  # For stickers (both static and animated)
+        filters.ANIMATION |  # For animations/GIFs
+        filters.VIDEO_NOTE  # For video notes (round videos)
+    )
+    application.add_handler(MessageHandler(non_text_filter, handle_invalid_message))
+
+    # Start bot
+    print("Bot ishga tushirilmoqda...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    print("Bot to'xtatildi")
 
 if __name__ == '__main__':
     main()
