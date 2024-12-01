@@ -189,10 +189,34 @@ async def handle_invalid_message(update: Update, context: ContextTypes.DEFAULT_T
         "❓ Yordam olish uchun /help buyrug'ini yuboring."
     )
 
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log Errors caused by Updates."""
+    logging.error("Exception while handling an update:", exc_info=context.error)
+    try:
+        if update and update.effective_message:
+            await update.effective_message.reply_text(
+                "❌ Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring."
+            )
+    except:
+        pass
+
 def main():
     """Main function"""
-    # Create application
-    application = Application.builder().token(TOKEN).build()
+    # Configure logging
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO
+    )
+    
+    # Create application with all necessary parameters
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
+        .build()
+    )
 
     # Add handlers
     application.add_handler(CommandHandler("start", start))
@@ -215,10 +239,17 @@ def main():
         filters.VIDEO_NOTE  # For video notes (round videos)
     )
     application.add_handler(MessageHandler(non_text_filter, handle_invalid_message))
+    
+    # Add error handler
+    application.add_error_handler(error_handler)
 
     # Start bot
     print("Bot ishga tushirilmoqda...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+        pool_timeout=None
+    )
     print("Bot to'xtatildi")
 
 if __name__ == '__main__':
