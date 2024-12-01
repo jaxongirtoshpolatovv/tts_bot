@@ -8,10 +8,16 @@ import tempfile
 from flask import Flask
 import threading
 from waitress import serve
+import multiprocessing
 import nest_asyncio
+from dotenv import load_dotenv
+import botanalytics
 
-# Event loop muammosini hal qilish
-nest_asyncio.apply()
+# .env faylidan o'zgaruvchilarni yuklash
+load_dotenv()
+
+# BotAnalytics API kalitini sozlash
+botanalytics.api_key = os.getenv('BOTANALYTICS_API_KEY')
 
 # Flask app
 app = Flask(__name__)
@@ -166,11 +172,27 @@ async def handle_invalid_message(update: Update, context: ContextTypes.DEFAULT_T
         "❓ Yordam olish uchun /help buyrug'ini yuboring."
     )
 
+def log_user_activity(update: Update):
+    user = update.effective_user
+    logger.info(f"Foydalanuvchi: {user.id}, Ismi: {user.first_name}, Username: {user.username}")
+
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    log_user_activity(update)
+    botanalytics.track(update)  # Foydalanuvchi xatti-harakatlarini kuzatish
+    await text_to_speech(update, context)
+
 def run_flask():
     """Flask serverni ishga tushirish"""
-    port = int(os.getenv("PORT", os.getenv("KOYEB_PORT", 8000)))
-    serve(app, host='0.0.0.0', port=port)
-    logger.info(f"Flask server {port}-portda ishga tushdi")
+    try:
+        # Portni olish
+        port = int(os.getenv("PORT", os.getenv("KOYEB_PORT", 8080)))  # 8000 o'rniga 8080 portini ishlatamiz
+        logger.info(f"Flask server {port}-portda ishga tushirilmoqda...")
+        
+        # Serverni ishga tushirish
+        serve(app, host='0.0.0.0', port=port)
+    except Exception as e:
+        logger.error(f"Flask server ishga tushishda xatolik: {e}")
+        raise e
 
 async def run_bot():
     """Botni ishga tushirish"""
@@ -183,7 +205,7 @@ async def run_bot():
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("voice", voice_command))
         application.add_handler(CallbackQueryHandler(button_callback))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
         
         # Noto'g'ri turdagi xabarlarni qayta ishlash
         non_text_filter = (
@@ -191,7 +213,7 @@ async def run_bot():
             filters.VIDEO |
             filters.AUDIO |
             filters.VOICE |
-            filters.ATTACHMENT |  # Document o'rniga
+            filters.ATTACHMENT |
             filters.Sticker.ALL |
             filters.ANIMATION |
             filters.VIDEO_NOTE
@@ -202,20 +224,34 @@ async def run_bot():
         logger.info("Bot ishga tushirilmoqda...")
         await application.initialize()
         await application.start()
-        await application.run_polling(allowed_updates=Update.ALL_TYPES)
+        await application.updater.start_polling(drop_pending_updates=True)
+        
+        try:
+            await application.updater.stop()
+        finally:
+            await application.stop()
+            
     except Exception as e:
         logger.error(f"Bot ishga tushishda xatolik: {e}")
         raise e
 
 def main():
     """Asosiy funksiya"""
-    # Flask serverni alohida thread da ishga tushirish
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
+    # Flask serverni alohida jarayonda ishga tushirish
+    flask_process = multiprocessing.Process(target=run_flask)
+    flask_process.start()
     
-    # Botni ishga tushirish
-    asyncio.run(run_bot())
+    try:
+        # Event loopni olish
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Botni ishga tushirish
+        loop.run_until_complete(run_bot())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.close()
 
 if __name__ == '__main__':
     main()
