@@ -245,14 +245,38 @@ async def main():
 
     # Start bot
     print("Bot ishga tushirilmoqda...")
-    await application.initialize()
-    await application.start()
-    await application.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True,
-        pool_timeout=None
-    )
-    print("Bot to'xtatildi")
+    
+    try:
+        await application.initialize()
+        await application.start()
+        print("Bot muvaffaqiyatli ishga tushdi!")
+        
+        # Run the bot until a stop signal is received
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+            poll_interval=1.0
+        )
+        
+        # Keep the bot running
+        while True:
+            await asyncio.sleep(1)
+            
+    except Exception as e:
+        print(f"Bot ishga tushishda xatolik: {e}")
+    finally:
+        try:
+            print("Bot to'xtatilmoqda...")
+            if application.running:
+                await application.stop()
+            print("Bot to'xtatildi")
+        except Exception as e:
+            print(f"Botni to'xtatishda xatolik: {e}")
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nBot foydalanuvchi tomonidan to'xtatildi")
+    except Exception as e:
+        print(f"Kutilmagan xatolik: {e}")
