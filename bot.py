@@ -98,7 +98,7 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Matn bo'sh bo'lishi mumkin emas!")
             return
         
-        if len(text) > 1000:
+        if len(text) > 10000:
             await update.message.reply_text("❌ Matn juda uzun! 1000 ta belgidan kam bo'lishi kerak.")
             return
             
